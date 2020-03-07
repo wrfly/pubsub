@@ -47,6 +47,8 @@ func (c *memChan) Write(bs []byte) error {
 }
 
 func (c *memChan) subSend(bs []byte) error {
+	send := make([]byte, len(bs))
+	copy(send, bs)
 	c.m.Lock()
 	defer c.m.Unlock()
 	if atomic.LoadInt32(c.closed) == 0 {
@@ -55,7 +57,7 @@ func (c *memChan) subSend(bs []byte) error {
 		select {
 		case <-tmer.C:
 			return ErrSendTimeout
-		case c.ch <- bs:
+		case c.ch <- send:
 			return nil
 		}
 	}
@@ -156,10 +158,12 @@ func (ps *pubSuber) Pub(ctx context.Context, chName string) (PubChan, error) {
 	go func() {
 		ch.boardCast, ch.boardCastC = context.WithCancel(context.Background())
 		for bs := range ch.pubChan.ch {
+			send := make([]byte, len(bs))
+			copy(send, bs)
 			ch.m.Lock()
 			failedSubs := uint16(len(ch.subChans))
 			for i := range ch.subChans {
-				if err := ch.subChans[i].subSend(bs); err == nil {
+				if err := ch.subChans[i].subSend(send); err == nil {
 					failedSubs--
 				}
 			}
