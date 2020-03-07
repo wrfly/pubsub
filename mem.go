@@ -32,7 +32,7 @@ type memChan struct {
 	fail chan uint16
 }
 
-func (c *memChan) Send(bs []byte) error {
+func (c *memChan) Write(bs []byte) error {
 	if atomic.LoadInt32(c.closed) == 0 {
 		if err := c.subSend(bs); err != nil {
 			return err
@@ -62,7 +62,7 @@ func (c *memChan) subSend(bs []byte) error {
 	return ErrChanClosed
 }
 
-func (c *memChan) Receive() <-chan []byte {
+func (c *memChan) Read() <-chan []byte {
 	return c.ch
 }
 
@@ -115,7 +115,7 @@ type pubSuber struct {
 	maxSub int32  // max sub of each channel
 }
 
-func (ps *pubSuber) Pub(ctx context.Context, chName string) (SendChan, error) {
+func (ps *pubSuber) Pub(ctx context.Context, chName string) (PubChan, error) {
 	ps.m.Lock()
 	defer ps.m.Unlock()
 
@@ -188,7 +188,7 @@ func (ps *pubSuber) Pub(ctx context.Context, chName string) (SendChan, error) {
 	return ch.pubChan, nil
 }
 
-func (ps *pubSuber) Sub(ctx context.Context, chName string) (RcvChan, error) {
+func (ps *pubSuber) Sub(ctx context.Context, chName string) (SubChan, error) {
 	ch, exist := ps.chans[chName]
 	if !exist {
 		return nil, ErrChNotFound
@@ -237,14 +237,27 @@ func (ps *pubSuber) Stats() (chanNum, pubNum, subNum int32) {
 	return int32(l), atomic.LoadInt32(ps.pubs), atomic.LoadInt32(ps.subs)
 }
 
-func (ps *pubSuber) PubSub(ctx context.Context, chName string) (SendChan, RcvChan, error) {
-	sCh, err := ps.Pub(ctx, chName)
-	if err != nil {
-		return nil, nil, err
-	}
-	rCh, err := ps.Sub(ctx, chName)
+type pubSubChan struct {
+	p PubChan
+	s SubChan
+}
 
-	return sCh, rCh, err
+func (ps *pubSubChan) Write(bs []byte) error {
+	return ps.p.Write(bs)
+}
+
+func (ps *pubSubChan) Read() <-chan []byte {
+	return ps.s.Read()
+}
+
+func (ps *pubSuber) PubSub(ctx context.Context, chName string) (PubSubChan, error) {
+	pubCh, err := ps.Pub(ctx, chName)
+	if err != nil {
+		return nil, err
+	}
+	subCh, err := ps.Sub(ctx, chName)
+
+	return &pubSubChan{pubCh, subCh}, err
 }
 
 func (ps *pubSuber) addPub(ctx context.Context, ch *channel) error {
@@ -266,8 +279,7 @@ func (ps *pubSuber) addPub(ctx context.Context, ch *channel) error {
 	return nil
 }
 
-func (ps *pubSuber) addSub(ctx context.Context,
-	ch *channel, subChan *memChan) error {
+func (ps *pubSuber) addSub(ctx context.Context, ch *channel, subChan *memChan) error {
 
 	if atomic.AddInt32(ch.subs, 1) > ps.maxSub {
 		return ErrSubExceeded

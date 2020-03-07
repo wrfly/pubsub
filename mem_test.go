@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func generateMsg(ctx context.Context, ch SendChan, g *int32) {
+func generateMsg(ctx context.Context, ch PubChan, g *int32) {
 	tk := time.NewTicker(time.Second / 200)
 	defer tk.Stop()
 	for i := 0; ; i++ {
@@ -20,7 +20,7 @@ func generateMsg(ctx context.Context, ch SendChan, g *int32) {
 			return
 		case <-tk.C:
 			s := fmt.Sprintf("index: %d", i)
-			if err := ch.Send([]byte(s)); err == nil {
+			if err := ch.Write([]byte(s)); err == nil {
 				atomic.AddInt32(g, 1)
 			}
 		}
@@ -46,7 +46,7 @@ func TestOneToOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	var rcv int32
-	for x := range subChan.Receive() {
+	for x := range subChan.Read() {
 		if len(x) != 0 {
 			rcv++
 		}
@@ -69,7 +69,7 @@ func TestOneToOne(t *testing.T) {
 
 }
 
-func TestOnToMuliti(t *testing.T) {
+func TestOnToMulti(t *testing.T) {
 	pubsub := NewMemPubSuber()
 
 	if c, p, s := pubsub.Stats(); c != 0 || p != 0 || s != 0 {
@@ -93,7 +93,7 @@ func TestOnToMuliti(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for x := range subChan.Receive() {
+			for x := range subChan.Read() {
 				if len(x) != 0 {
 					subGot[i]++
 				}
@@ -154,7 +154,7 @@ func TestMultiToMulti(t *testing.T) {
 				t.Fatal(err)
 			}
 			rcvWG.Done()
-			for x := range subChan.Receive() {
+			for x := range subChan.Read() {
 				if len(x) != 0 {
 					subGot[i]++
 				}
@@ -175,7 +175,7 @@ func TestMultiToMulti(t *testing.T) {
 			}
 			// send N messages
 			for i := 0; i < num; i++ {
-				if err := pubChan.Send([]byte("x")); err != nil {
+				if err := pubChan.Write([]byte("x")); err != nil {
 					t.Error(err)
 				} else {
 					atomic.AddInt32(&sent, 1)
