@@ -1,6 +1,6 @@
 package pubsub
 
-// go test -timeout 30s github.com/wrfly/chatom/pkg/pubsub -v -count=1 -race
+// go test -timeout 30s github.com/wrfly/pubsub -v -count=1 -race
 
 import (
 	"context"
@@ -54,7 +54,8 @@ func TestOneToOne(t *testing.T) {
 	// after 1s
 	<-ctx.Done()
 
-	ctx, _ = context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 	if err := pubsub.CloseWait(ctx); err != nil {
 		t.Error(err)
 	}
@@ -111,7 +112,8 @@ func TestOnToMulti(t *testing.T) {
 
 	<-ctx.Done()
 
-	ctx, _ = context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 	if err := pubsub.CloseWait(ctx); err != nil {
 		t.Error(err)
 	}
@@ -186,7 +188,8 @@ func TestMultiToMulti(t *testing.T) {
 
 	<-ctx.Done()
 
-	ctx, _ = context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 	if err := pubsub.CloseWait(ctx); err != nil {
 		t.Error(err)
 	}

@@ -29,7 +29,7 @@ type memChan struct {
 	m      sync.Mutex
 
 	tout time.Duration // send timeout
-	fail chan uint16
+	fail chan int32
 }
 
 func (c *memChan) Write(bs []byte) error {
@@ -39,7 +39,7 @@ func (c *memChan) Write(bs []byte) error {
 		}
 
 		if f := <-c.fail; f != 0 {
-			return fmt.Errorf("faild %d", f)
+			return fmt.Errorf("failed chan %d", f)
 		}
 		return nil
 	}
@@ -77,9 +77,9 @@ func (c *memChan) Close() {
 }
 
 type channel struct {
-	pubChan  *memChan
-	subChans []*memChan
-	name     string
+	pubChan *memChan
+	subChan map[*memChan]bool
+	name    string
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -139,14 +139,14 @@ func (ps *pubSuber) Pub(ctx context.Context, chName string) (PubChan, error) {
 			closed: &closed,
 			ch:     make(chan []byte),
 			tout:   time.Millisecond * 10,
-			fail:   make(chan uint16),
+			fail:   make(chan int32),
 		},
-		subChans: make([]*memChan, 0),
-		name:     chName,
-		pubs:     &pn,
-		subs:     &sn,
-		ctx:      chCtx,
-		cancel:   cancel,
+		subChan: make(map[*memChan]bool, 100),
+		name:    chName,
+		pubs:    &pn,
+		subs:    &sn,
+		ctx:     chCtx,
+		cancel:  cancel,
 	}
 	ps.chans[chName] = ch
 
@@ -161,9 +161,9 @@ func (ps *pubSuber) Pub(ctx context.Context, chName string) (PubChan, error) {
 			send := make([]byte, len(bs))
 			copy(send, bs)
 			ch.m.Lock()
-			failedSubs := uint16(len(ch.subChans))
-			for i := range ch.subChans {
-				if err := ch.subChans[i].subSend(send); err == nil {
+			failedSubs := atomic.LoadInt32(ps.subs)
+			for subChan := range ch.subChan {
+				if err := subChan.subSend(send); err == nil {
 					failedSubs--
 				}
 			}
@@ -290,7 +290,7 @@ func (ps *pubSuber) addSub(ctx context.Context, ch *channel, subChan *memChan) e
 	}
 
 	ch.m.Lock()
-	ch.subChans = append(ch.subChans, subChan)
+	ch.subChan[subChan] = true
 	ch.m.Unlock()
 
 	atomic.AddInt32(ps.subs, 1)
@@ -307,6 +307,10 @@ func (ps *pubSuber) addSub(ctx context.Context, ch *channel, subChan *memChan) e
 		atomic.AddInt32(ps.subs, -1)
 
 		subChan.Close()
+		// delete from subChan
+		ch.m.Lock()
+		delete(ch.subChan, subChan)
+		ch.m.Unlock()
 	}()
 
 	return nil
